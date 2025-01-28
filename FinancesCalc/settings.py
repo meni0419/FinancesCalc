@@ -30,7 +30,8 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'api.custom_auth.CookieJWTAuthentication',  # Custom cookie-based authentication
+        'rest_framework_simplejwt.authentication.JWTAuthentication',  # Default SimpleJWT auth
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -38,10 +39,39 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),  # Renew daily
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=365),  # 1-year token life
-    'AUTH_HEADER_TYPES': ('Bearer',),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # Optional, adjust as needed
+    'AUTH_HEADER_TYPES': ('Bearer',),  # This must match the "Bearer" prefix in the frontend
 }
+
+# LOGGING = {
+#     'version': 1,
+#     'disable_existing_loggers': False,
+#     'handlers': {
+#         'console': {
+#             'class': 'logging.StreamHandler',
+#         },
+#     },
+#     'loggers': {
+#         'django': {
+#             'handlers': ['console'],
+#             'level': 'DEBUG',  # Use 'INFO' for less verbosity
+#         },
+#         'django.request': {
+#             'handlers': ['console'],
+#             'level': 'DEBUG',  # Log failed requests
+#             'propagate': False,
+#         },
+#         'django_auth': {
+#             'handlers': ['console'],
+#             'level': 'DEBUG',  # Log detailed auth events
+#         },
+#         'rest_framework': {
+#             'handlers': ['console'],
+#             'level': 'DEBUG',  # Log DRF-specific issues
+#         },
+#     },
+# }
 
 # Application definition
 
@@ -54,6 +84,7 @@ INSTALLED_APPS = [
     'api',
     'rest_framework',
     'drf_yasg',
+    'rest_framework_simplejwt',
 ]
 
 MIDDLEWARE = [
@@ -134,7 +165,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
-
+# Add this if you have a custom location for static files
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',  # Adjust if your static folder is located elsewhere
+]
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 

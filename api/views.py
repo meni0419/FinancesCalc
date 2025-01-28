@@ -2,6 +2,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -10,76 +12,121 @@ from django.contrib.auth.hashers import check_password, make_password
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
 from django.shortcuts import render, redirect
-from django.contrib.auth import authenticate, login
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
 
 from api.models import UserProfile
 
 
-def save_user_password(raw_password):
-    hashed_password = make_password(raw_password)
-    return hashed_password
-
-
-def change_users_password():
-    users = UserProfile.objects.all()
-    for user in users:
-        user.password = save_user_password(user.login)
-        user.save()
-
-
+@csrf_exempt
 def login_page(request):
-    if request.method == 'POST':
+    """
+    Handles rendering the login page and processing login requests.
+    Generates JWT tokens for successful logins and redirects to the employee list.
+    """
+    if request.method == 'GET':
+        # Render the login form for GET requests
+        return render(request, 'login.html')
+
+    elif request.method == 'POST':
+        # Handle login for POST requests
         username = request.POST.get('username')
         password = request.POST.get('password')
 
-        user = authenticate(request, username=username, password=password)  # Validate credentials
-        if user is not None:
-            login(request, user)  # Login and create session
-            return redirect('/employees/')  # Redirect on successful login
-        else:
-            # Re-render login page with an error message
+        user = authenticate(request, username=username, password=password)
+        if user is None:
+            # In case of invalid credentials, return login page with error
             return render(request, 'login.html', {'error': 'Invalid username or password'})
 
-    return render(request, 'login.html')  # For GET requests, render login form
+        # Generate JWT tokens for the authenticated user
+        refresh = RefreshToken.for_user(user)
+
+        # Pass the tokens to the frontend for storage
+        response = redirect('/employees/')  # Redirect to employee list page upon success
+        response.set_cookie('access_token', str(refresh.access_token), httponly=False)
+        response.set_cookie('refresh_token', str(refresh), httponly=False)
+        return response
 
 
 class LoginView(APIView):
+    """
+      Login API to authenticate user and return JWT tokens.
+      """
+
     def post(self, request):
         username = request.data.get('username')
         password = request.data.get('password')
 
-        # Check if user exists and password matches
-        try:
-            user_profile = UserProfile.objects.get(login=username)
-            if not check_password(password, user_profile.password):
-                return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
-        except UserProfile.DoesNotExist:
-            return Response({"error": "User does not exist"}, status=status.HTTP_401_UNAUTHORIZED)
+        user = authenticate(request, username=username, password=password)
+        if user is None:
+            return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Generate tokens
-        refresh = RefreshToken.for_user(user_profile)
+        # Generate JWT tokens
+        refresh = RefreshToken.for_user(user)
         return Response({
-            "refresh": str(refresh),
-            "access": str(refresh.access_token)
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
         }, status=status.HTTP_200_OK)
 
 
+@csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def employee_list_view(request):
-    # Query database for employee data
-    employees = UserProfile.objects.all()
-    employee_data = [
-        {
-            'id': emp.user_id,
-            'first_name': emp.first_name,
-            'middle_name': emp.middle_name,
-            'last_name': emp.last_name,
-            'email': emp.email,
-        }
-        for emp in employees
-    ]
-    return Response(employee_data)
+    try:
+        # Check for the token in the Authorization header
+        auth_header = request.META.get("HTTP_AUTHORIZATION", None)
+
+        # If the token is not in the header, check the cookies
+        if not auth_header:
+            access_token = request.COOKIES.get('access_token')
+            if access_token:
+                auth_header = f"Bearer {access_token}"
+
+        if not auth_header:
+            return render(request, 'employee_list.html', {
+                'error': 'Authorization header missing'
+            })
+
+        # Validate token
+        raw_token = auth_header.split()[-1]  # Extract token from "Bearer <TOKEN>"
+        token = JWTAuthentication().get_validated_token(raw_token)
+
+        # If token is valid, proceed with fetching employees
+        employees = UserProfile.objects.all()
+        employee_data = [
+            {
+                'first_name': employee.user.first_name,
+                'last_name': employee.user.last_name,
+                'email': employee.user.email
+            }
+            for employee in employees
+        ]
+
+        # Pass employee data to the template
+        return render(request, 'employee_list.html', {'employees': employee_data})
+
+    except InvalidToken as e:
+        print(f"Token validation failed: {e}")  # Debugging logs
+        return render(request, 'employee_list.html', {
+            'error': 'Invalid or expired token'
+        })
+    except Exception as e:
+        print(f"Unexpected error: {e}")  # Debugging logs
+        return render(request, 'employee_list.html', {
+            'error': 'An error occurred'
+        })
+
+
+@api_view(['POST'])
+def logout_view(request):
+    """
+    Clears tokens by removing cookies.
+    """
+    response = Response({"detail": "Logged out successfully."}, status=204)
+    response.delete_cookie('access_token')
+    response.delete_cookie('refresh_token')
+    return response
 
 
 @csrf_exempt  # Allow requests without CSRF token for simplicity (use cautiously in production)
@@ -133,7 +180,14 @@ def employee_list_view(request):
     }
 )
 @api_view(['POST'])  # DRF API view decorator to handle POST requests
+@permission_classes([IsAuthenticated])
 def get_user_info(request):
+    """
+    Fetches detailed information of users based on provided user IDs or retrieves all users if no IDs are specified.
+
+    :param request: The HTTP request object containing JSON payload with optional 'user_ids'.
+    :return: JSON response of user data or error messages.
+    """
     try:
         # Extract JSON payload from the request
         body = request.data
@@ -181,3 +235,43 @@ def get_user_info(request):
         return Response({'error': 'Some users not found'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
+
+
+def auto_create_user_profiles():
+    """
+    Automatically creates user accounts for all profiles in the UserProfile model.
+    Links the profiles to the created users if not already linked.
+    """
+    for profile in UserProfile.objects.all():
+        user, created = User.objects.get_or_create(
+            username=profile.login,
+            defaults={
+                'first_name': profile.first_name,
+                'last_name': profile.last_name,
+                'email': profile.email,
+                'password': profile.password,
+            }
+        )
+        profile.user = user
+        profile.save()
+
+
+def save_user_password(raw_password):
+    """
+    Hashes a given plaintext password using Django's hashing framework.
+
+    :param raw_password: The plaintext password to be hashed.
+    :return: The hashed password.
+    """
+    hashed_password = make_password(raw_password)
+    return hashed_password
+
+
+def change_users_password():
+    """
+    Update all user passwords in the UserProfile model by hashing their login as the password.
+    """
+    users = UserProfile.objects.all()
+    for user in users:
+        user.password = save_user_password(user.login)
+        user.save()

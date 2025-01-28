@@ -2,7 +2,10 @@ from django.urls import path
 from rest_framework import permissions  # For permission settings
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
-from api.views import get_user_info, LoginView, employee_list_view, login_page  # Import your view
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import AuthenticationFailed
+
+from api.views import get_user_info, LoginView, employee_list_view, login_page, logout_view  # Import your view
 from django.shortcuts import redirect
 from django.http import HttpResponse
 
@@ -21,14 +24,27 @@ schema_view = get_schema_view(
 
 
 def home_page(request):
-    # Check if the user is logged in (Django session-based authentication)
-    if not request.user.is_authenticated:
-        return redirect('/login/')
-    return redirect('/employees/')
+    """
+    Redirects to login or employees list based on token validity.
+    """
+    # Check for the access token in the cookies
+    token = request.COOKIES.get('access_token')
+
+    if not token:
+        return redirect('/login/')  # Redirect to login if no token is present
+
+    try:
+        # Validate the token using SimpleJWT
+        JWTAuthentication().get_validated_token(token)
+        return redirect('/employees/')  # Redirect to employees page if the token is valid
+    except AuthenticationFailed:
+        return redirect('/login/')  # Redirect to login if the token is invalid
 
 
 urlpatterns = [
     path('', home_page, name='home'),
+    path('employees/', employee_list_view, name='employee_list'),
+    path('logout/', logout_view, name='logout'),
     # Your existing paths
     path('user-info/', get_user_info, name='get_user_info'),
     path('api/login/', LoginView.as_view(), name='api_login'),  # REST API login
