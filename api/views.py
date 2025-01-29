@@ -7,7 +7,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFail
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
@@ -20,32 +20,35 @@ from api.models import UserProfile
 
 @csrf_exempt
 def login_page(request):
-    """
-    Handles rendering the login page and processing login requests.
-    Generates JWT tokens for successful logins and redirects to the employee list.
-    """
-    if request.method == 'GET':
-        # Render the login form for GET requests
-        return render(request, 'login.html')
-
-    elif request.method == 'POST':
-        # Handle login for POST requests
+    if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
 
         user = authenticate(request, username=username, password=password)
         if user is None:
-            # In case of invalid credentials, return login page with error
-            return render(request, 'login.html', {'error': 'Invalid username or password'})
+            return redirect('/login/')  # Failed login
 
-        # Generate JWT tokens for the authenticated user
+        # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
 
-        # Pass the tokens to the frontend for storage
-        response = redirect('/employees/')  # Redirect to employee list page upon success
-        response.set_cookie('access_token', str(refresh.access_token), httponly=False)
-        response.set_cookie('refresh_token', str(refresh), httponly=False)
+        response = redirect('/employees/')
+        response.set_cookie(
+            'access_token',
+            str(refresh.access_token),
+            max_age=3600,  # 1 hour expiration
+            httponly=False,  # Allow access from JavaScript
+            samesite='Lax',  # Adjust as needed based on your environment
+        )
+        response.set_cookie(
+            'refresh_token',
+            str(refresh),
+            max_age=3600 * 24 * 30,  # 30 days expiration
+            httponly=False,
+            samesite='Lax',
+        )
         return response
+
+    return render(request, 'login.html')
 
 
 class LoginView(APIView):
@@ -69,53 +72,62 @@ class LoginView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = '__all__'  # Serialize all fields in the UserProfile model
+
+
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def employee_list_view(request):
     try:
-        # Check for the token in the Authorization header
-        auth_header = request.META.get("HTTP_AUTHORIZATION", None)
-
-        # If the token is not in the header, check the cookies
-        if not auth_header:
-            access_token = request.COOKIES.get('access_token')
-            if access_token:
-                auth_header = f"Bearer {access_token}"
-
-        if not auth_header:
-            return render(request, 'employee_list.html', {
-                'error': 'Authorization header missing'
-            })
-
-        # Validate token
-        raw_token = auth_header.split()[-1]  # Extract token from "Bearer <TOKEN>"
-        token = JWTAuthentication().get_validated_token(raw_token)
-
-        # If token is valid, proceed with fetching employees
+        # Validate token automatically via IsAuthenticated permission
         employees = UserProfile.objects.all()
-        employee_data = [
-            {
-                'first_name': employee.user.first_name,
-                'last_name': employee.user.last_name,
-                'email': employee.user.email
-            }
-            for employee in employees
-        ]
-
-        # Pass employee data to the template
-        return render(request, 'employee_list.html', {'employees': employee_data})
-
-    except InvalidToken as e:
-        print(f"Token validation failed: {e}")  # Debugging logs
-        return render(request, 'employee_list.html', {
-            'error': 'Invalid or expired token'
-        })
+        serializer = UserProfileSerializer(employees, many=True)
+        return Response(serializer.data)  # Return employee data as JSON
+    except InvalidToken:
+        return Response({'error': 'Invalid or expired token'}, status=401)
     except Exception as e:
-        print(f"Unexpected error: {e}")  # Debugging logs
-        return render(request, 'employee_list.html', {
-            'error': 'An error occurred'
-        })
+        return Response({'error': str(e)}, status=400)
+    #     })def employee_list_view(request):
+    # try:
+    #     # Check for the token in the Authorization header
+    #     auth_header = request.META.get("HTTP_AUTHORIZATION", None)
+    #
+    #     # If the token is not in the header, check the cookies
+    #     if not auth_header:
+    #         access_token = request.COOKIES.get('access_token')
+    #         if access_token:
+    #             auth_header = f"Bearer {access_token}"
+    #
+    #     if not auth_header:
+    #         return render(request, 'employee_list.html', {
+    #             'error': 'Authorization header missing'
+    #         })
+    #
+    #     # Validate token
+    #     raw_token = auth_header.split()[-1]  # Extract token from "Bearer <TOKEN>"
+    #     token = JWTAuthentication().get_validated_token(raw_token)
+    #
+    #     # If token is valid, proceed with fetching employees
+    #     employees = UserProfile.objects.all()
+    #     serializer = UserProfileSerializer(employees, many=True)
+    #
+    #     # Pass employee data to the template
+    #     return render(request, 'employee_list.html', {'employees': serializer.data})
+    #
+    # except InvalidToken as e:
+    #     print(f"Token validation failed: {e}")  # Debugging logs
+    #     return render(request, 'employee_list.html', {
+    #         'error': 'Invalid or expired token'
+    #     })
+    # except Exception as e:
+    #     print(f"Unexpected error: {e}")  # Debugging logs
+    #     return render(request, 'employee_list.html', {
+    #         'error': 'An error occurred'
+    #     })
 
 
 @api_view(['POST'])

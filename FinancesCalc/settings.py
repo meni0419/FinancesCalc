@@ -85,6 +85,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_yasg',
     'rest_framework_simplejwt',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
@@ -95,6 +96,12 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
+]
+CORS_ORIGIN_ALLOW_ALL = True  # Разрешить все домены (для разработки)
+CORS_ALLOW_CREDENTIALS = True  # Разрешить передачу кук
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Allow your React frontend
 ]
 
 ROOT_URLCONF = 'FinancesCalc.urls'
@@ -166,9 +173,7 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 # Add this if you have a custom location for static files
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',  # Adjust if your static folder is located elsewhere
-]
+STATICFILES_DIRS = [BASE_DIR / 'static', BASE_DIR / 'frontend/build']
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
