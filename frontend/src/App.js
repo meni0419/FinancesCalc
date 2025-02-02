@@ -1,51 +1,90 @@
-import {BrowserRouter as Router, Route, Routes, Navigate} from "react-router-dom";
+import {BrowserRouter as Router, Navigate, Route, Routes, useNavigate,} from "react-router-dom";
 import {MaterialReactTable} from "material-react-table";
-import {useNavigate} from "react-router-dom";
-import React, {useState, useEffect, createContext} from "react";
-import {ThemeProvider, createTheme, CssBaseline} from "@mui/material";
+import React, {useEffect, useState} from "react";
+import {Alert, createTheme, CssBaseline, Snackbar, ThemeProvider} from "@mui/material"; // Import material components
 
 const Login = () => {
-    const handleSubmit = async (event) => {
-        event.preventDefault(); // Prevent form reload
-        const form = event.target;
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: "",
+        severity: "info", // "info", "success", "warning", "error"
+    });
 
-        const username = form.username.value;
-        const password = form.password.value;
+    const handleClose = () => {
+        setSnackbar({...snackbar, open: false});
+    };
+    const handleSubmit = async (event) => {
+        event.preventDefault();
+        const username = event.target.username.value;
+        const password = event.target.password.value;
 
         try {
-            const response = await fetch("/login/", {
+            // Get CSRF token from cookies (or an endpoint)
+            const csrfToken = document.cookie
+                .split('; ')
+                .find((row) => row.startsWith('csrftoken='))
+                ?.split('=')[1];
+
+            const response = await fetch("/api/login/", {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrfToken, // Send CSRF token
                 },
-                body: new URLSearchParams({username, password}),
+                body: JSON.stringify({username, password}),
             });
 
-            if (response.redirected) {
-                // Login successful, update state and redirect to /employees/
-                window.location.href = response.url; // Redirect to employees list
+            const result = await response.json();
+
+            if (response.ok) {
+                const {access, refresh} = result;
+                localStorage.setItem("accessToken", access);
+                localStorage.setItem("refreshToken", refresh);
+                window.location.href = "/employees";
             } else {
-                const error = await response.text(); // Show error message
-                console.error("Login failed:", error);
-                alert("Failed to login: " + error);
+                // Handle errors
+                console.error("Login error:", result.error);
+                setSnackbar({
+                    open: true,
+                    message: result.error || "Invalid login credentials",
+                    severity: "error",
+                });
             }
         } catch (err) {
-            console.error("Login error:", err);
+            console.error("Fetch error:", err);
+            setSnackbar({
+                open: true,
+                message: "Something went wrong. Please try again later.",
+                severity: "error",
+            });
         }
     };
 
     return (
-        <div style={{padding: "20px"}}>
-            <h1>Login Page</h1>
-            <form onSubmit={handleSubmit}>
-                <label htmlFor="username">Username:</label>
-                <input type="text" id="username" name="username" required/>
-                <br/>
-                <label htmlFor="password">Password:</label>
-                <input type="password" id="password" name="password" required/>
-                <br/>
-                <button type="submit">Login</button>
-            </form>
+        <div className="login-page">
+            <div className="login-container">
+                <h1>Login Page</h1>
+                <form className="login-form" onSubmit={handleSubmit}>
+                    <label htmlFor="username">Username:</label>
+                    <input type="text" id="username" name="username" required/>
+                    <label htmlFor="password">Password:</label>
+                    <input type="password" id="password" name="password" required/>
+                    <button type="submit">Login</button>
+                </form>
+                <Snackbar
+                    open={snackbar.open}
+                    autoHideDuration={6000}
+                    onClose={handleClose}
+                >
+                    <Alert
+                        onClose={handleClose}
+                        severity={snackbar.severity}
+                        sx={{width: '100%'}}
+                    >
+                        {snackbar.message}
+                    </Alert>
+                </Snackbar>
+            </div>
         </div>
     );
 };
@@ -54,100 +93,128 @@ const Employees = () => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(false); // Theme toggle state
-    const navigate = useNavigate();
+    const [isDarkMode, setIsDarkMode] = useState(false); // Добавлено состояние для темы
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: "",
+        severity: "info", // "info", "success", "warning", "error"
+    });
+    const navigate = useNavigate(); // Добавлен хук useNavigate
 
-    // Light and dark themes for MaterialReactTable
+    // Создание тем
     const lightTheme = createTheme({
         palette: {
             mode: "light",
-            background: {paper: "#ffffff"},
-            text: {primary: "#000000"},
-        },
-        components: {
-            MuiTable: {
-                styleOverrides: {
-                    root: {
-                        border: "1px solid #cccccc",
-                    },
-                },
-            },
         },
     });
 
     const darkTheme = createTheme({
         palette: {
             mode: "dark",
-            background: {paper: "#121212"},
-            text: {primary: "#ffffff"},
-        },
-        components: {
-            MuiTable: {
-                styleOverrides: {
-                    root: {
-                        border: "1px solid #444444",
-                    },
-                },
-            },
         },
     });
 
-    // Handle logout
-    const handleLogout = async () => {
+    // Функция для переключения темы
+    const toggleTheme = () => {
+        setIsDarkMode((prevTheme) => !prevTheme);
+    };
+
+    const handleLogout = () => {
+        // Clear tokens on logout
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
+        window.location.href = "/login";
+    };
+
+    const fetchEmployees = async () => {
         try {
-            const response = await fetch("/logout/", {method: "POST"});
-            if (response.ok) {
-                document.cookie = "access_token=; Max-Age=0; path=/;";
-                document.cookie = "refresh_token=; Max-Age=0; path=/;";
-                navigate("/login");
-            } else {
-                console.error("Failed to log out.");
+            const accessToken = localStorage.getItem("accessToken");
+
+            if (!accessToken) {
+                throw new Error("No access token found");
             }
-        } catch (err) {
-            console.error("Logout error:", err);
+
+            const response = await fetch("/api/employees/", {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json"
+                },
+            });
+
+            if (!response.ok) {
+                // Handling errors
+                if (response.status === 401) {
+                    console.error("Access token expired.");
+                    const newAccessToken = await refreshAccessToken();
+                    if (newAccessToken) {
+                        fetchEmployees(); // Retry!
+                    } else {
+                        throw new Error("Could not refresh access token");
+                    }
+                } else {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+            } else {
+                const result = await response.json();
+                setData(result);
+            }
+        } catch (error) {
+            console.error("Failed to fetch employees:", error);
+            setError(true);
+            setSnackbar({
+                open: true,
+                message: "Unauthorized. Please log in again.",
+                severity: "error",
+            });
+            navigate("/login");
+        } finally {
+            setLoading(false);
         }
     };
 
-    // Toggle theme
-    const toggleTheme = () => {
-        setIsDarkMode((prevTheme) => !prevTheme);
-        document.body.classList.toggle("dark");
+    const refreshAccessToken = async () => {
+        try {
+            const refreshToken = localStorage.getItem("refreshToken");
+
+            if (!refreshToken) {
+                throw new Error("No refresh token found");
+            }
+
+            const response = await fetch("/api/token/refresh/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({refresh: refreshToken}),
+            });
+
+            if (response.ok) {
+                const {access} = await response.json();
+                localStorage.setItem("accessToken", access); // Save new access token
+                return access; // Return new token
+            } else {
+                throw new Error("Failed to refresh token");
+            }
+        } catch (err) {
+            console.error("Error refreshing access token:", err);
+            localStorage.removeItem("accessToken"); // Clear invalid tokens
+            localStorage.removeItem("refreshToken");
+            setSnackbar({
+                open: true,
+                message: "Token refresh failed. Redirecting to login.",
+                severity: "error",
+            });
+            window.location.href = "/login";
+            return null;
+        }
     };
 
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const accessToken = document.cookie
-                    .split("; ")
-                    .find((row) => row.startsWith("access_token="))
-                    ?.split("=")[1];
-
-                if (!accessToken) {
-                    throw new Error("No access token found");
-                }
-
-                const response = await fetch("/api/employees/", {
-                    headers: {
-                        Authorization: `Bearer ${accessToken}`,
-                    },
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-
-                const result = await response.json();
-                setData(result);
-            } catch (error) {
-                console.error("Failed to load employees:", error);
-                setError(true);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchData();
-    }, []);
+        const currentTheme = isDarkMode ? "dark" : "light";
+        document.body.setAttribute("data-theme", currentTheme);
+        fetchEmployees();
+    }, [isDarkMode]);
 
     if (error) {
         navigate("/login");
@@ -219,6 +286,19 @@ const Employees = () => {
                         enableSorting={true}
                     />
                 )}
+                <Snackbar
+                    open={snackbar.open}
+                    autoHideDuration={6000}
+                    onClose={() => setSnackbar({...snackbar, open: false})}
+                >
+                    <Alert
+                        onClose={() => setSnackbar({...snackbar, open: false})}
+                        severity={snackbar.severity}
+                        sx={{width: '100%'}}
+                    >
+                        {snackbar.message}
+                    </Alert>
+                </Snackbar>
             </div>
         </ThemeProvider>
     );
@@ -228,36 +308,31 @@ const App = () => {
     const [isLoggedIn, setIsLoggedIn] = useState(null); // Null during initial check
 
     const checkLoginStatus = async () => {
-        // Retrieve the token from cookies
-        const accessToken = document.cookie
-            .split("; ")
-            .find((row) => row.startsWith("access_token="))?.split("=")[1];
+        const accessToken = localStorage.getItem("accessToken");
 
-        // If no token, user is not logged in
+        // Token not found
         if (!accessToken) {
+            console.log("No token found. User is not logged in.");
             setIsLoggedIn(false);
             return;
         }
 
         try {
-            // Optional: Validate token with API to ensure it's not expired or invalid
             const response = await fetch("/api/employees/", {
                 method: "GET",
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                },
+                headers: {Authorization: `Bearer ${accessToken}`},
             });
 
             if (response.status === 401) {
-                // Token expired/invalid, log user out
+                console.warn("Token invalid or expired. Logging out the user.");
+                localStorage.removeItem("accessToken");
                 setIsLoggedIn(false);
-                return;
+            } else if (response.ok) {
+                console.log("Token valid. User is logged in.");
+                setIsLoggedIn(true);
             }
-
-            // Token is valid
-            setIsLoggedIn(true);
         } catch (err) {
-            console.error("Token validation failed:", err);
+            console.error("Error validating token:", err);
             setIsLoggedIn(false);
         }
     };

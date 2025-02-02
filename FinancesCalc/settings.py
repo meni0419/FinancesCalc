@@ -30,7 +30,7 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'api.custom_auth.CookieJWTAuthentication',  # Custom cookie-based authentication
+        # 'api.custom_auth.CookieJWTAuthentication',  # Custom cookie-based authentication
         'rest_framework_simplejwt.authentication.JWTAuthentication',  # Default SimpleJWT auth
     ),
     'DEFAULT_PERMISSION_CLASSES': (
@@ -39,10 +39,18 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # Optional, adjust as needed
-    'AUTH_HEADER_TYPES': ('Bearer',),  # This must match the "Bearer" prefix in the frontend
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),  # Suggested minimum: 15 mins
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Suggested: 7 days
+    'ROTATE_REFRESH_TOKENS': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),  # Match the frontend "Bearer" prefix
 }
+
+#
+# SIMPLE_JWT = {
+#     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+#     'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # Optional, adjust as needed
+#     'AUTH_HEADER_TYPES': ('Bearer',),  # This must match the "Bearer" prefix in the frontend
+# }
 
 # LOGGING = {
 #     'version': 1,
@@ -89,20 +97,32 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
+    "corsheaders.middleware.CorsMiddleware",  # Ensure this is first
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
-CORS_ORIGIN_ALLOW_ALL = True  # Разрешить все домены (для разработки)
-CORS_ALLOW_CREDENTIALS = True  # Разрешить передачу кук
+
+CORS_ORIGIN_ALLOW_ALL = False  # Разрешить все домены (для разработки)
+# CORS_ALLOW_CREDENTIALS = True  # Разрешить передачу кук
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # Allow your React frontend
+    "http://localhost:3000",
+    "http://127.0.0.1:8000",  # Allow your React frontend
 ]
+CORS_ALLOW_HEADERS = (
+    'content-disposition',
+    'content-type',
+    'accept-encoding',
+    'origin',
+    'authorization',  # Разрешаем Authorization
+    'accept',
+    'x-csrftoken',
+    'x-requested-with',
+)
 
 ROOT_URLCONF = 'FinancesCalc.urls'
 
