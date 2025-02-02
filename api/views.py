@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User
+from django.db import connection
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from drf_yasg import openapi
@@ -12,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from api.models import UserProfile, Mo, UserToMo
+from api.models import UserProfile
 
 
 def get_csrf_token(request):
@@ -54,28 +55,72 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ]
 
 
-class MoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Mo
-        fields = '__all__'
-
-
-class UserToMoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UserToMo
-        fields = '__all__'
-
-
 @api_view(['POST', 'GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def employee_list_view(request):
-    employees = UserProfile.objects.all()
-    mo_objects = Mo.objects.all()
-
-    employee_serializer = UserProfileSerializer(employees, many=True)
-    mo_serializer = MoSerializer(mo_objects, many=True)
-
-    return Response(mo_serializer.data, status=200)
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT * FROM mo m
+            left join user_to_mo utm on utm.mo_id = m.mo_id
+            left join user u on u.user_id = utm.user_id
+            left join role_to_user rtu ON rtu.mo_id = m.mo_id
+        """)
+        rows = cursor.fetchall()
+        response_data = [
+            {
+                "mo_id": row[0],
+#                "mo_type_id": row[1],
+                "mo_position_id": row[2],
+                "name": row[3],
+                "live_start": row[4],
+                "live_end": row[5],
+                "hidden": row[6],
+#                "tarif_id": row[7],
+                "description": row[8],
+                "auto_supertags": row[9],
+#                "user_to_mo_id": row[10],
+#                "utm_user_id": row[11],
+#                "utm_mo_id": row[12],
+                "utm_live_start": row[13],
+                "utm_live_end": row[14],
+                "user_id": row[15],
+                "login": row[16],
+                #"password": row[17],
+                "g_token": row[18],
+                "last_name": row[19],
+                "first_name": row[20],
+                "middle_name": row[21],
+                "gender": row[22],
+                "emp_code": row[23],
+                "photo": row[24],
+#                "hash": row[25],
+                "sms_phone": row[26],
+                "u_live_start": row[27],
+                "u_live_end": row[28],
+                "birthday": row[29],
+#                "google": row[30],
+                "country": row[31],
+                "region": row[32],
+                "city": row[33],
+                "latitude": row[34],
+                "longitude": row[35],
+                "status": row[36],
+#                "u_tarif_id": row[37],
+                "email": row[38],
+#                "blocked": row[39],
+                "u_description": [40],
+                "onesignal_id": row[41],
+                "layout_id": row[42],
+                "theme": row[43],
+#                "id": row[44],
+#                "role_to_user_id": row[45],
+                "role_id": row[46],
+#                "rtu_mo_id": row[47],
+#                "rtu_user_id": row[48]
+            }
+            for row in rows
+        ]
+    return Response(response_data, status=200)
 
 
 @swagger_auto_schema(
