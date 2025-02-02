@@ -39,18 +39,11 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),  # Suggested minimum: 15 mins
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Suggested: 7 days
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),  # Suggested minimum: 15 mins
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # Suggested: 7 days
     'ROTATE_REFRESH_TOKENS': True,
     'AUTH_HEADER_TYPES': ('Bearer',),  # Match the frontend "Bearer" prefix
 }
-
-#
-# SIMPLE_JWT = {
-#     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-#     'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # Optional, adjust as needed
-#     'AUTH_HEADER_TYPES': ('Bearer',),  # This must match the "Bearer" prefix in the frontend
-# }
 
 # LOGGING = {
 #     'version': 1,

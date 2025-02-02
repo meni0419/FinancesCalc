@@ -135,7 +135,7 @@ const Employees = () => {
             }
 
             const response = await fetch("/api/employees/", {
-                method: "GET",
+                method: "POST",
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
                     "Content-Type": "application/json"

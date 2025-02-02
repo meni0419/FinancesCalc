@@ -1,20 +1,18 @@
+from django.contrib.auth import authenticate
+from django.contrib.auth.hashers import make_password
+from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
-from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework import status, serializers
-from django.contrib.auth.hashers import make_password
-from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import api_view, permission_classes
-from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from api.models import UserProfile
+from api.models import UserProfile, Mo, UserToMo
 
 
 def get_csrf_token(request):
@@ -48,48 +46,42 @@ class LoginView(APIView):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
-        fields = '__all__'  # Serialize all fields in the UserProfile model
+        # Explicitly list all fields except the 'password' field
+        fields = [
+            'id', 'login', 'middle_name', 'first_name', 'last_name', 'email', 'sms_phone',
+            'emp_code', 'photo', 'sex', 'birthday', 'country', 'region', 'city', 'latitude',
+            'longitude', 'status', 'description', 'onesignal_id', 'theme'
+        ]
 
 
-@api_view(['GET'])
+class MoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Mo
+        fields = '__all__'
+
+
+class UserToMoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserToMo
+        fields = '__all__'
+
+
+@api_view(['POST', 'GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def employee_list_view(request):
-    auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+    employees = UserProfile.objects.all()
+    mo_objects = Mo.objects.all()
 
-    if not auth_header:
-        return Response({"error": "Authorization header missing"}, status=401)
+    employee_serializer = UserProfileSerializer(employees, many=True)
+    mo_serializer = MoSerializer(mo_objects, many=True)
 
-    try:
-        # Extract the token
-        raw_token = auth_header.split(" ")[1]
-        token = AccessToken(raw_token)  # Decode token manually for debugging
+    return Response(mo_serializer.data, status=200)
 
-        # Fetch employees if token is valid
-        employees = UserProfile.objects.all()
-        serializer = UserProfileSerializer(employees, many=True)
-        return Response(serializer.data, status=200)
-    except Exception as e:
-        print(f"Token validation error: {str(e)}")
-        return Response({"error": "Invalid token"}, status=401)
-
-
-@api_view(['POST'])
-def logout_view(request):
-    """
-    Clears tokens by removing cookies.
-    """
-    response = Response({"detail": "Logged out successfully."}, status=204)
-    response.delete_cookie('access_token')
-    response.delete_cookie('refresh_token')
-    return response
-
-
-@csrf_exempt  # Allow requests without CSRF token for simplicity (use cautiously in production)
-@require_POST  # Ensure only POST requests are allowed
 
 @swagger_auto_schema(
     method='post',  # Define the method for Swagger
     request_body=openapi.Schema(
+
         type=openapi.TYPE_OBJECT,
         properties={
             'user_ids': openapi.Schema(
@@ -99,6 +91,7 @@ def logout_view(request):
             ),
         },
         required=[],  # 'user_ids' is optional now
+
     ),
     responses={
         200: openapi.Schema(
@@ -135,6 +128,7 @@ def logout_view(request):
     }
 )
 @api_view(['POST'])  # DRF API view decorator to handle POST requests
+
 @permission_classes([IsAuthenticated])
 def get_user_info(request):
     """
@@ -230,73 +224,3 @@ def change_users_password():
     for user in users:
         user.password = save_user_password(user.login)
         user.save()
-
-    #     })def employee_list_view(request):
-    # try:
-    #     # Check for the token in the Authorization header
-    #     auth_header = request.META.get("HTTP_AUTHORIZATION", None)
-    #
-    #     # If the token is not in the header, check the cookies
-    #     if not auth_header:
-    #         access_token = request.COOKIES.get('access_token')
-    #         if access_token:
-    #             auth_header = f"Bearer {access_token}"
-    #
-    #     if not auth_header:
-    #         return render(request, 'employee_list.html', {
-    #             'error': 'Authorization header missing'
-    #         })
-    #
-    #     # Validate token
-    #     raw_token = auth_header.split()[-1]  # Extract token from "Bearer <TOKEN>"
-    #     token = JWTAuthentication().get_validated_token(raw_token)
-    #
-    #     # If token is valid, proceed with fetching employees
-    #     employees = UserProfile.objects.all()
-    #     serializer = UserProfileSerializer(employees, many=True)
-    #
-    #     # Pass employee data to the template
-    #     return render(request, 'employee_list.html', {'employees': serializer.data})
-    #
-    # except InvalidToken as e:
-    #     print(f"Token validation failed: {e}")  # Debugging logs
-    #     return render(request, 'employee_list.html', {
-    #         'error': 'Invalid or expired token'
-    #     })
-    # except Exception as e:
-    #     print(f"Unexpected error: {e}")  # Debugging logs
-    #     return render(request, 'employee_list.html', {
-    #         'error': 'An error occurred'
-    #     })
-
-# @csrf_exempt
-# def login_page(request):
-#     if request.method == 'POST':
-#         username = request.POST.get('username')
-#         password = request.POST.get('password')
-#
-#         user = authenticate(request, username=username, password=password)
-#         if user is None:
-#             return redirect('/login/')  # Failed login
-#
-#         # Generate JWT tokens
-#         refresh = RefreshToken.for_user(user)
-#
-#         response = redirect('/employees/')
-#         response.set_cookie(
-#             'access_token',
-#             str(refresh.access_token),
-#             max_age=3600,  # 1 hour expiration
-#             httponly=False,  # Allow access from JavaScript
-#             samesite='Lax',  # Adjust as needed based on your environment
-#         )
-#         response.set_cookie(
-#             'refresh_token',
-#             str(refresh),
-#             max_age=3600 * 24 * 30,  # 30 days expiration
-#             httponly=False,
-#             samesite='Lax',
-#         )
-#         return response
-#
-#     return render(request, 'login.html')
