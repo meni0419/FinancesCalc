@@ -55,68 +55,164 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ]
 
 
-@api_view(['POST', 'GET', 'PUT', 'DELETE'])
+# Маппинг значений
+FIELD_MAPPINGS = {
+    "gender": {
+        0: "Обрати",
+        1: "Чоловік",
+        2: "Жінка",
+    },
+    "yesNo": {
+        0: "Ні",
+        1: "Так",
+    },
+    "status": {
+        0: "Працює",
+        1: "Відпуска",
+        2: "Звільнено",
+        3: "Заблокований"
+    },
+    # Добавьте другие поля для маппинга здесь
+}
+
+
+def map_field_value(field_name, field_value):
+    """
+    Преобразует числовое значение поля в текстовое значение на основе маппинга.
+
+    :param field_name: Название поля (ключ маппинга).
+    :param field_value: Значение, которое нужно преобразовать.
+    :return: Текстовое представление значения или оригинальное значение, если маппинг отсутствует.
+    """
+    return FIELD_MAPPINGS.get(field_name, {}).get(field_value, field_value)
+
+
+@api_view(['POST', 'GET'])
 @permission_classes([IsAuthenticated])
 def employee_list_view(request):
+    period_start = request.data.get("period_start")
+    period_end = request.data.get("period_end")
+
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT * FROM mo m
-            left join user_to_mo utm on utm.mo_id = m.mo_id
-            left join user u on u.user_id = utm.user_id
-            left join role_to_user rtu ON rtu.mo_id = m.mo_id
-        """)
+SELECT m.mo_id,
+       mp.name,
+       m.name,
+       m.live_start,
+       m.live_end,
+       m.hidden,
+       m.description,
+       m.auto_supertags,
+       utm.live_start,
+       utm.live_end,
+       u.user_id,
+       u.login,
+       u.g_token,
+       u.last_name,
+       u.first_name,
+       u.middle_name,
+       u.sex,
+       u.emp_code,
+       u.photo,
+       u.sms_phone,
+       u.live_start,
+       u.live_end,
+       u.birthday,
+       u.country,
+       u.region,
+       u.city,
+       u.latitude,
+       u.longitude,
+       u.status,
+       u.email,
+       u.description,
+       u.onesignal_id,
+       u.layout_id,
+       u.theme,
+       rtu.role_id,
+       ro.name,
+       l.name,
+       ma.name_alias,
+       mh.since,
+       mh.name,
+       mh.consumers,
+       mh.`order`,
+       mh.hierarchy_path,
+       mh.pid,
+       CONCAT(u.last_name, ' ', UCASE(LEFT(u.first_name, 1)), '. ',
+                        UCASE(LEFT(u.middle_name, 1)), '.') as initials
+       
+FROM mo m
+         LEFT JOIN user_to_mo utm ON utm.mo_id = m.mo_id
+            AND utm.live_end = (SELECT MAX(utm2.live_end) as max_live_end
+                        FROM user_to_mo AS utm2
+                        where m.mo_id = utm2.mo_id
+                          and utm2.live_end >= %s
+                          and utm2.live_start <= %s
+                        group by utm2.mo_id)
+         LEFT JOIN user u ON u.user_id = utm.user_id
+         LEFT JOIN role_to_user rtu ON rtu.mo_id = m.mo_id
+         LEFT JOIN role ro ON ro.role_id = rtu.role_id
+         LEFT JOIN mo_position mp ON mp.mo_position_id = m.mo_position_id
+         LEFT JOIN layouts l ON l.id = u.layout_id
+         LEFT JOIN mo_hst mh ON mh.mo_id = m.mo_id
+            AND mh.since = (SELECT MAX(mh2.since) as max_since
+                    FROM mo_hst AS mh2
+                    where mh2.mo_id = m.mo_id
+                      AND mh2.since <= %s
+                    group by mh2.mo_id)
+         LEFT JOIN mo_aliases ma ON ma.mo_id = m.mo_id
+where m.live_end >= %s
+and m.live_start <= %s;
+        """, [period_start, period_end, period_start, period_start, period_end])
         rows = cursor.fetchall()
         response_data = [
             {
                 "mo_id": row[0],
-#                "mo_type_id": row[1],
-                "mo_position_id": row[2],
-                "name": row[3],
-                "live_start": row[4],
-                "live_end": row[5],
-                "hidden": row[6],
-#                "tarif_id": row[7],
-                "description": row[8],
-                "auto_supertags": row[9],
-#                "user_to_mo_id": row[10],
-#                "utm_user_id": row[11],
-#                "utm_mo_id": row[12],
-                "utm_live_start": row[13],
-                "utm_live_end": row[14],
-                "user_id": row[15],
-                "login": row[16],
-                #"password": row[17],
-                "g_token": row[18],
-                "last_name": row[19],
-                "first_name": row[20],
-                "middle_name": row[21],
-                "gender": row[22],
-                "emp_code": row[23],
-                "photo": row[24],
-#                "hash": row[25],
-                "sms_phone": row[26],
-                "u_live_start": row[27],
-                "u_live_end": row[28],
-                "birthday": row[29],
-#                "google": row[30],
-                "country": row[31],
-                "region": row[32],
-                "city": row[33],
-                "latitude": row[34],
-                "longitude": row[35],
-                "status": row[36],
-#                "u_tarif_id": row[37],
-                "email": row[38],
-#                "blocked": row[39],
-                "u_description": [40],
-                "onesignal_id": row[41],
-                "layout_id": row[42],
-                "theme": row[43],
-#                "id": row[44],
-#                "role_to_user_id": row[45],
-                "role_id": row[46],
-#                "rtu_mo_id": row[47],
-#                "rtu_user_id": row[48]
+                "mo_position": row[1],
+                "name": row[2],
+                "live_start": row[3],
+                "live_end": row[4],
+                "hidden": map_field_value("yesNo", row[5]),
+                "description": row[6],
+                "auto_supertags": row[7],
+                "utm_live_start": row[8],
+                "utm_live_end": row[9],
+                "user_id": row[10],
+                "login": row[11],
+                # "g_token": row[12],
+                "last_name": row[13],
+                "first_name": row[14],
+                "middle_name": row[15],
+                "gender": map_field_value("gender", row[16]),
+                "emp_code": row[17],
+                "photo": row[18],
+                "sms_phone": row[19],
+                "u_live_start": row[20],
+                "u_live_end": row[21],
+                "birthday": row[22],
+                "country": row[23],
+                "region": row[24],
+                "city": row[25],
+                "latitude": row[26],
+                "longitude": row[27],
+                "status": map_field_value("status", row[28]),
+                "email": row[29],
+                "u_description": row[30],
+                "onesignal_id": row[31],
+                "layout_id": row[32],
+                "theme": row[33],
+                "role_id": row[34],
+                "role_name": row[35],
+                "layout_name": row[36],
+                "mo_alias_name": row[37],
+                "mo_hst_since": row[38],
+                "mo_hst_name": row[39],
+                "mo_hst_consumers": row[40],
+                "mo_hst_order": row[41],
+                "mo_hst_path": row[42],
+                "mo_hst_pid": row[43],
+                "initials": row[44],
             }
             for row in rows
         ]

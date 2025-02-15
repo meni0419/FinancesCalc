@@ -1,4 +1,4 @@
-.PHONY: push merge_master delete_branch
+.PHONY: push merge_master delete_branch run_nginx
 
 # Detect Windows or Unix-like system
 ifeq ($(OS), Windows_NT)
@@ -97,3 +97,13 @@ else
 	gh repo create $(r) --public --source=. --remote=origin && \
 	git push origin master
 endif
+
+run_nginx:
+	docker run -d --name nginx \
+	  -v /home/mm/docker/nginx/usr/share/nginx:/usr/share/nginx \
+	  -v /home/mm/docker/nginx/certs:/etc/nginx/certs \
+      -v /home/mm/docker/nginx/conf.d:/etc/nginx/conf.d \
+      -v /home/mm/docker/nginx/nginx.conf:/etc/nginx/nginx.conf \
+	  -p 8080:80 \
+	  -p 8443:443 \
+	  nginx

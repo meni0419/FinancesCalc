@@ -105,7 +105,14 @@ CORS_ORIGIN_ALLOW_ALL = False  # Разрешить все домены (для 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:8000",  # Allow your React frontend
-]
+    "http://frontend:3000",
+    "http://backend:8000",
+    "http://localhost:8000",
+    "http://finances-calc.com:8000",
+    "http://finances-calc.com:3000",
+    "http://finances-calc.com",
+    ]
+
 CORS_ALLOW_HEADERS = (
     'content-disposition',
     'content-type',
@@ -186,7 +193,7 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 # Add this if you have a custom location for static files
-STATICFILES_DIRS = [BASE_DIR / 'static', BASE_DIR / 'frontend/build']
+STATICFILES_DIRS = [BASE_DIR / 'static']
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
