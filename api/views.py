@@ -59,7 +59,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def set_option(request):
-    user_id = request.user.id  # Пользователь определяется через токен аутентификации
     key = request.query_params.get('key') if request.method == 'GET' else request.data.get('key')
 
     # Проверка ключа
