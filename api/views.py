@@ -12,8 +12,9 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+import json
 
-from api.models import UserProfile
+from api.models import UserProfile, Option
 
 
 def get_csrf_token(request):
@@ -53,6 +54,86 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'emp_code', 'photo', 'sex', 'birthday', 'country', 'region', 'city', 'latitude',
             'longitude', 'status', 'description', 'onesignal_id', 'theme'
         ]
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def set_option(request):
+    user_id = request.user.id  # Пользователь определяется через токен аутентификации
+    key = request.query_params.get('key') if request.method == 'GET' else request.data.get('key')
+
+    # Проверка ключа
+    if not key:
+        return Response({"error": "Key is required"}, status=400)
+
+    try:
+        if request.method == 'GET':
+            # Получаем текущего пользователя, если указан
+            user_id = request.user.id
+
+            # Если пришел параметр user, используйте либо текущего (user_id), либо 0
+            user_param = request.query_params.get('user', user_id)
+
+            # Пробуем получить опцию для пользователя
+            option = Option.objects.filter(user_id=user_param, key=key).first()
+
+            if option:
+                value = json.loads(option.value)
+                return Response({"key": key, "value": value}, status=200)
+            else:
+                # Пробуем fallback на user_id = 0
+                default_option = Option.objects.filter(user_id=0, key=key).first()
+                if default_option:
+                    value = json.loads(default_option.value)
+                    return Response({"key": key, "value": value}, status=200)
+
+            # Если ничего не нашли, возвращаем пустое значение
+            return Response({"key": key, "value": {}}, status=200)
+
+        if request.method == 'POST':
+            value = request.data.get('value')
+            user_id = request.data.get(
+                'user') or request.user.id  # Используем либо аутентифицированного, либо переданного
+            if not value:
+                return Response({"error": "Value is required for saving"}, status=400)
+
+            # Сохраним/Обновим опцию:
+            option, created = Option.objects.get_or_create(
+                user_id=user_id,
+                key=key,
+                defaults={'value': json.dumps(value)}
+            )
+
+            if not created:
+                option.value = json.dumps(value)
+                option.save()
+
+            return Response({"key": key, "message": "Option saved successfully"}, status=200)
+
+    except Option.DoesNotExist:
+        return Response({"key": key, "value": {}}, status=200)  # Возвращение пустых данных
+    except json.JSONDecodeError as e:
+        return Response({"error": f"Failed to decode JSON: {str(e)}"}, status=400)
+    except Exception as e:
+        return Response({"error": f"An error occurred: {str(e)}"}, status=500)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def manage_theme(request):
+    profile = request.user.profile
+
+    if request.method == 'GET':
+        return Response({"theme": profile.theme}, status=200)
+
+    if request.method == 'POST':
+        theme = request.data.get('theme')
+        if theme not in [0, 1, 2]:
+            return Response({"error": "Invalid theme value"}, status=400)
+
+        profile.theme = theme
+        profile.save()
+        return Response({"message": "Theme updated successfully"}, status=200)
 
 
 # Маппинг значений
@@ -219,57 +300,35 @@ and m.live_start <= %s;
     return Response(response_data, status=200)
 
 
-@swagger_auto_schema(
-    method='post',  # Define the method for Swagger
-    request_body=openapi.Schema(
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_info(request):
+    user = request.userProfile
+    return Response({
+        'id': user.user_id,
+        'login': user.login,
+        'middle_name': user.middle_name,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'email': user.email,
+        'sms_phone': user.sms_phone,
+        'emp_code': user.emp_code,
+        'photo': user.photo,
+        'sex': user.sex,
+        'birthday': user.birthday,
+        'country': user.country,
+        'region': user.region,
+        'city': user.city,
+        'latitude': user.latitude,
+        'longitude': user.longitude,
+        'status': user.status,
+        'description': user.description,
+        'onesignal_id': user.onesignal_id,
+        'theme': user.theme,
+    }, status=200)
 
-        type=openapi.TYPE_OBJECT,
-        properties={
-            'user_ids': openapi.Schema(
-                type=openapi.TYPE_ARRAY,
-                items=openapi.Schema(type=openapi.TYPE_INTEGER),
-                description="List of user IDs to fetch information for",
-            ),
-        },
-        required=[],  # 'user_ids' is optional now
 
-    ),
-    responses={
-        200: openapi.Schema(
-            type=openapi.TYPE_ARRAY,
-            items=openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-
-                properties={
-                    'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'login': openapi.Schema(type=openapi.TYPE_STRING),
-                    'middle_name': openapi.Schema(type=openapi.TYPE_STRING),
-                    'first_name': openapi.Schema(type=openapi.TYPE_STRING),
-                    'last_name': openapi.Schema(type=openapi.TYPE_STRING),
-                    'email': openapi.Schema(type=openapi.TYPE_STRING),
-                    'sms_phone': openapi.Schema(type=openapi.TYPE_INTEGER, format="int64"),
-                    'emp_code': openapi.Schema(type=openapi.TYPE_STRING),
-                    'photo': openapi.Schema(type=openapi.TYPE_STRING),
-                    'sex': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'birthday': openapi.Schema(type=openapi.TYPE_STRING, format="date"),
-                    'country': openapi.Schema(type=openapi.TYPE_STRING),
-                    'region': openapi.Schema(type=openapi.TYPE_STRING),
-                    'city': openapi.Schema(type=openapi.TYPE_STRING),
-                    'latitude': openapi.Schema(type=openapi.TYPE_STRING),
-                    'longitude': openapi.Schema(type=openapi.TYPE_STRING),
-                    'status': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'description': openapi.Schema(type=openapi.TYPE_STRING),
-                    'onesignal_id': openapi.Schema(type=openapi.TYPE_STRING),
-                    'theme': openapi.Schema(type=openapi.TYPE_INTEGER),
-                },
-            ),
-        ),
-        400: "Invalid JSON payload",
-        404: "User not found",
-    }
-)
 @api_view(['POST'])  # DRF API view decorator to handle POST requests
-
 @permission_classes([IsAuthenticated])
 def get_user_info(request):
     """
